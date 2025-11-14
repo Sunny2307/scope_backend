@@ -1,0 +1,258 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  STUDENT
+  GUIDE
+  OPERATOR
+  DEAN
+}
+
+enum Institute {
+  CHARUSAT
+}
+
+enum LeaveType {
+  CL
+  DL
+  LWP
+}
+
+enum ScholarshipType {
+  CPSF
+  SODH
+  UGC_CSIR_JRF
+  DST_INSPIRE
+  OTHER
+}
+
+enum Status {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum LeaveSource {
+  MANUAL
+  AUTO
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum CastCategory {
+  GENERAL
+  OBC
+  SC
+  ST
+  OTHER
+}
+
+model User {
+  id                 String               @id @default(uuid()) @unique
+  email              String               @unique
+  name               String?
+  password           String?                                      // Made optional to allow setting after OTP verification
+  role               UserRole             @default(STUDENT)
+  institute          Institute?            @default(CHARUSAT)
+  institutionalEmail String?              @unique
+  profilePhotoUrl    String?              // Added: Profile photo URL
+  isActive           Boolean              @default(true)
+  updatedAt          DateTime?            @updatedAt
+  student            Student?             @relation("StudentUser")
+  remarks            Remark[]             @relation("UserRemarks")
+  verificationTokens Verification_Token[]
+  guidedStudents     Student[]            @relation("Guide")
+  coGuidedStudents   Student[]            @relation("CoGuide")
+  otp                String?                                      // Added: Stores the OTP for email verification
+  otpExpires         DateTime?                                    // Added: Tracks OTP expiration time
+  isVerified         Boolean              @default(false) // Added: Tracks if email is verified
+  isApproved         Boolean              @default(false) // Added: Tracks if student is approved by operator
+  approvalStatus     String?             @default("PENDING") // Added: PENDING, APPROVED, REJECTED
+  approvedBy         String?                                      // Added: ID of operator who approved/rejected
+  approvedAt         DateTime?                                    // Added: When approval/rejection happened
+  rejectionReason    String?                                      // Added: Reason for rejection if rejected
+
+  @@index([email])
+  @@index([institutionalEmail])
+  @@index([role])
+  @@index([approvalStatus])
+}
+
+model Student {
+  id                  Int              @id @default(autoincrement())
+  userId              String           @unique
+  user                User             @relation("StudentUser", fields: [userId], references: [id])
+  guideId             String?
+  guide               User?            @relation("Guide", fields: [guideId], references: [id])
+  coGuideId           String?
+  coGuide             User?            @relation("CoGuide", fields: [coGuideId], references: [id])
+  enrollmentYear      Int
+  department          String
+  scholarshipType     ScholarshipType?
+  scholarshipAmount   Int?             @default(30000)
+  scholarshipVerified Boolean          @default(false)
+  clLeavesRemaining   Int              @default(30)
+  ugcId               String?          @unique
+  profile             StudentProfile?  @relation("StudentProfile")
+  leaves              Leave[]          @relation("StudentLeaves")
+  scholarships        Scholarship[]
+  attendance          Attendance[]
+  leaveHistory        Leave_History[] // Added opposite field for student in Leave_History
+
+  @@index([userId])
+  @@index([guideId])
+  @@index([coGuideId])
+  @@index([enrollmentYear])
+}
+
+model StudentProfile {
+  id                    Int          @id @default(autoincrement())
+  studentId             Int          @unique
+  student               Student      @relation("StudentProfile", fields: [studentId], references: [id])
+  employeeId            String?      // Added: Employee ID field
+  admissionDate         DateTime
+  registrationDate      DateTime
+  currentSemester       Int          // Added: Matches frontend formData
+  gender                Gender
+  birthDate             DateTime
+  admissionCastCategory CastCategory
+  actualCastCategory    CastCategory
+  nationality           String
+  localFullAddress      String
+  permanentFullAddress  String
+  country               String
+  mobileNo              String
+  guardianMobileNo      String?      // Added: Matches frontend formData
+  guardianEmail         String?      // Added: Matches frontend formData
+  personalEmail         String?      @unique
+  isHandicapped         Boolean      @default(false)
+  disability            String?
+  photoUploaded         Boolean      @default(false)
+  belongsToSamaj        Boolean      @default(false)
+  hostelNameAndAddress  String?      // Added: Matches frontend formData
+  aadhaarNumber         String?      @unique
+  pancardNumber         String?      @unique
+  nameOfGuide           String?      // Added: Matches frontend formData
+  scholarshipAmount     Int?         // Added: Matches frontend formData
+  contingencyAmount     Int?         // Added: Matches frontend formData
+  scholarshipType       ScholarshipType? // Added: Matches frontend formData
+  ugcId                 String?      // Added: Matches frontend formData (optional, unique if provided)
+
+  @@index([studentId])
+  @@index([personalEmail])
+  @@index([aadhaarNumber])
+  @@index([pancardNumber])
+}
+
+model Leave {
+  id              Int             @id @default(autoincrement())
+  studentId       Int
+  student         Student         @relation("StudentLeaves", fields: [studentId], references: [id])
+  leaveType       LeaveType
+  leaveSource     LeaveSource     @default(MANUAL)
+  startDate       DateTime
+  endDate         DateTime
+  status          Status          @default(PENDING)
+  applicationDate DateTime        @default(now())
+  documentPath    String?         // Path to uploaded document for DL leaves
+  events          Event[]
+  remarks         Remark[]
+  leaveHistory    Leave_History[]
+  attendance      Attendance?     @relation("AutoGeneratedLeave") // Added opposite field for autoGeneratedLeave in Attendance
+
+  @@index([studentId])
+  @@index([leaveType])
+  @@index([status])
+}
+
+model Event {
+  id            Int    @id @default(autoincrement())
+  leaveId       Int
+  leave         Leave  @relation(fields: [leaveId], references: [id])
+  eventName     String
+  eventLocation String
+  documentLink  String
+
+  @@index([leaveId])
+}
+
+model Remark {
+  id         Int      @id @default(autoincrement())
+  leaveId    Int
+  leave      Leave    @relation(fields: [leaveId], references: [id])
+  userId     String
+  user       User     @relation("UserRemarks", fields: [userId], references: [id])
+  role       UserRole
+  remark     String
+  actionDate DateTime @default(now())
+
+  @@index([leaveId])
+  @@index([userId])
+  @@index([role])
+}
+
+model Scholarship {
+  id                Int             @id @default(autoincrement())
+  studentId         Int
+  student           Student         @relation(fields: [studentId], references: [id])
+  year              Int
+  month             Int
+  scholarshipType   ScholarshipType
+  baseAmount        Int             @default(30000)
+  contingencyAmount Int?            @default(0)
+  lwpDeduction      Int             @default(0)
+  finalAmount       Int             @default(30000)
+  paidDate          DateTime?
+
+  @@index([studentId])
+  @@index([year, month])
+}
+
+model Attendance {
+  id                   Int      @id @default(autoincrement())
+  studentId            Int
+  student              Student  @relation(fields: [studentId], references: [id])
+  date                 DateTime
+  isPresent            Boolean
+  autoGeneratedLeaveId Int?     @unique
+  autoGeneratedLeave   Leave?   @relation("AutoGeneratedLeave", fields: [autoGeneratedLeaveId], references: [id]) // Added relation name
+  uploadDate           DateTime @default(now())
+
+  @@index([studentId])
+  @@index([date])
+}
+
+model Leave_History {
+  id         Int      @id @default(autoincrement())
+  leaveId    Int
+  leave      Leave    @relation(fields: [leaveId], references: [id])
+  studentId  Int
+  student    Student  @relation(fields: [studentId], references: [id])
+  action     Status
+  actionDate DateTime @default(now())
+
+  @@index([leaveId])
+  @@index([studentId])
+}
+
+model Verification_Token {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([token])
+}
