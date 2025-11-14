@@ -32,3 +32,10 @@ Thumbs.db
 
 # Neon-specific (if any configuration files are created locally)
 .neon/
+
+# Vercel
+.vercel
+
+# Uploads (should use cloud storage in production)
+uploads/*
+!uploads/.gitkeep
