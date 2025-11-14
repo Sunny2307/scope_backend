@@ -36,7 +36,39 @@ Go to **Settings → Environment Variables** and add:
 
 Click **"Deploy"** and wait 2-5 minutes.
 
-Your API will be live at: `https://your-project.vercel.app/api/...`
+### 5. Find Your Deployment URL
+
+After deployment completes, you'll see your deployment URL:
+
+#### Where to Find It:
+1. **After deployment**: The URL is shown on the deployment page
+2. **Project Dashboard**: Go to your project → You'll see **"Production URL"** at the top
+3. **Deployments Tab**: Click on "Deployments" → Click on latest deployment → See the URL
+
+#### Your Backend API URL:
+```
+https://your-project-name.vercel.app/api
+```
+
+**Example:**
+- If your project is named `scope-backend`
+- Your API URL will be: `https://scope-backend.vercel.app/api`
+- All endpoints: `https://scope-backend.vercel.app/api/auth/*`, `/api/dean/*`, etc.
+
+### 6. Use in Frontend
+
+Update your frontend `.env` file:
+```env
+VITE_API_URL=https://your-project-name.vercel.app/api
+# or
+REACT_APP_API_URL=https://your-project-name.vercel.app/api
+```
+
+Then use it in your frontend:
+```javascript
+const API_URL = import.meta.env.VITE_API_URL;
+// Use API_URL for all API calls
+```
 
 ## 📝 Important Notes
 

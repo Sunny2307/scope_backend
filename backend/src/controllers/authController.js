@@ -827,10 +827,16 @@ export const submitLeaveApplication = async (req, res) => {
     }
 
     // Prepare document path if file is uploaded (for DL leaves)
+    // On Vercel, files are stored in memory, so we convert to base64 and store in database
     let documentPath = null;
     if (req.file && leaveType === 'DL') {
-      // Store relative path: leave-documents/filename
-      documentPath = `leave-documents/${req.file.filename}`;
+      // Convert PDF to base64 for storage (Vercel-compatible)
+      const base64Document = req.file.buffer.toString('base64');
+      const dataUrl = `data:${req.file.mimetype};base64,${base64Document}`;
+      
+      // Store as base64 data URL in documentPath field
+      // Format: data:application/pdf;base64,<base64_string>
+      documentPath = dataUrl;
     }
 
     // Create leave application
