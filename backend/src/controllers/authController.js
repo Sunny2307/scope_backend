@@ -65,13 +65,18 @@ const generateOTP = () => crypto.randomInt(1000, 9999).toString();
 
 // Signup and send OTP
 export const signup = async (req, res) => {
-  const { email } = req.body;
+  const { email, studentId } = req.body;
   if (!email) return res.status(400).json({ error: 'Email is required' });
+  if (!studentId) return res.status(400).json({ error: 'Student ID is required' });
 
 
   try {
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) return res.status(400).json({ error: 'Email already registered' });
+
+    // Check if student ID is already taken
+    const existingStudentId = await prisma.user.findUnique({ where: { id: String(studentId).toUpperCase() } });
+    if (existingStudentId) return res.status(400).json({ error: 'Student ID already registered' });
 
 
     const otp = generateOTP();
@@ -80,6 +85,7 @@ export const signup = async (req, res) => {
 
     const user = await prisma.user.create({
       data: {
+        id: String(studentId).toUpperCase(), // Use student ID as the user ID
         email,
         otp,
         otpExpires,
@@ -113,7 +119,16 @@ export const verifyOTP = async (req, res) => {
 
 
   try {
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({
+      where: { email },
+      include: {
+        student: {
+          include: {
+            profile: true,
+          },
+        },
+      },
+    });
     if (!user) return res.status(404).json({ error: 'User not found' });
 
 
@@ -155,6 +170,124 @@ export const setPassword = async (req, res) => {
 };
 
 
+// Forgot password - send OTP
+export const forgotPassword = async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email is required' });
+
+  try {
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const otp = generateOTP();
+    const otpExpires = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+
+    await prisma.user.update({
+      where: { email },
+      data: { otp, otpExpires },
+    });
+
+    await sendEmail(email, 'Your OTP for Password Reset', `Your OTP is: ${otp}. It expires in 5 minutes.`);
+    res.status(200).json({ message: 'OTP sent to your email' });
+  } catch (error) {
+    console.error('Forgot password error:', error.message);
+    res.status(500).json({ error: 'Failed to send OTP' });
+  }
+};
+
+
+// Verify OTP for forgot password
+export const verifyForgotPasswordOTP = async (req, res) => {
+  const { email, otp } = req.body;
+  if (!email || !otp) return res.status(400).json({ error: 'Email and OTP are required' });
+
+  try {
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    if (user.otp !== otp || new Date() > user.otpExpires) {
+      return res.status(400).json({ error: 'Invalid or expired OTP' });
+    }
+
+    // Keep OTP valid for password reset step
+    res.status(200).json({ message: 'OTP verified. Please set your new password' });
+  } catch (error) {
+    console.error('Verify forgot password OTP error:', error.message);
+    res.status(500).json({ error: 'Failed to verify OTP' });
+  }
+};
+
+
+// Reset password after OTP verification
+export const resetPassword = async (req, res) => {
+  const { email, otp, password } = req.body;
+  if (!email || !otp || !password) return res.status(400).json({ error: 'Email, OTP, and password are required' });
+
+  try {
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    // Verify OTP again before resetting password
+    if (user.otp !== otp || new Date() > user.otpExpires) {
+      return res.status(400).json({ error: 'Invalid or expired OTP' });
+    }
+
+    await prisma.user.update({
+      where: { email },
+      data: { 
+        password,
+        otp: null,
+        otpExpires: null,
+      },
+    });
+    res.status(200).json({ message: 'Password reset successfully' });
+  } catch (error) {
+    console.error('Reset password error:', error.message);
+    res.status(500).json({ error: 'Failed to reset password' });
+  }
+};
+
+
+// Change password when logged in (requires current password)
+export const changePassword = async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Current password and new password are required' });
+
+  try {
+    // Get user from token
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) return res.status(401).json({ error: 'Token is required' });
+
+    const verificationToken = await prisma.verification_Token.findUnique({
+      where: { token },
+      include: { user: true },
+    });
+
+    if (!verificationToken || !verificationToken.user) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+
+    const user = verificationToken.user;
+
+    // Verify current password
+    if (user.password !== currentPassword) {
+      return res.status(400).json({ error: 'Current password is incorrect' });
+    }
+
+    // Update password
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { password: newPassword },
+    });
+
+    res.status(200).json({ message: 'Password changed successfully' });
+  } catch (error) {
+    console.error('Change password error:', error.message);
+    res.status(500).json({ error: 'Failed to change password' });
+  }
+};
+
+
 // Login
 export const login = async (req, res) => {
   const { email, password } = req.body;
@@ -170,6 +303,7 @@ export const login = async (req, res) => {
       if (!adminUser) {
         adminUser = await prisma.user.create({
           data: {
+            id: 'admin', // Use simple ID for admin
             email: 'admin@charusat.edu.in',
             name: 'Admin Guide',
             password: '1234',
@@ -207,6 +341,7 @@ export const login = async (req, res) => {
       if (!operatorUser) {
         operatorUser = await prisma.user.create({
           data: {
+            id: 'operator', // Use simple ID for operator
             email: 'operator@charusat.edu.in',
             name: 'Operator',
             password: '1234',
@@ -244,6 +379,7 @@ export const login = async (req, res) => {
       if (!deanUser) {
         deanUser = await prisma.user.create({
           data: {
+            id: 'dean', // Use simple ID for dean
             email: 'dean@charusat.edu.in',
             name: 'Dean',
             password: '1234',
@@ -277,12 +413,20 @@ export const login = async (req, res) => {
     if (!user || !user.isVerified || user.password !== password) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
+
+    let needsProfileCompletion = false;
+    let approvalStatus = null;
     
-    // Check if student is approved (only for STUDENT role)
-    if (user.role === 'STUDENT' && (!user.isApproved || user.approvalStatus !== 'APPROVED')) {
-      return res.status(403).json({ 
-        error: 'Your account is pending approval. Please wait for operator approval before logging in.' 
-      });
+    // Determine student access rules
+    if (user.role === 'STUDENT') {
+      const hasCompletedProfile = Boolean(user.student?.profile);
+      
+      if (!hasCompletedProfile) {
+        needsProfileCompletion = true;
+      } else {
+        // Profile is complete, return approval status
+        approvalStatus = user.approvalStatus || 'PENDING';
+      }
     }
     
     const token = crypto.randomBytes(32).toString('hex');
@@ -301,7 +445,9 @@ export const login = async (req, res) => {
         email: user.email,
         name: user.name,
         role: user.role
-      }
+      },
+      needsProfileCompletion,
+      approvalStatus // Include approval status for students
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -827,16 +973,10 @@ export const submitLeaveApplication = async (req, res) => {
     }
 
     // Prepare document path if file is uploaded (for DL leaves)
-    // On Vercel, files are stored in memory, so we convert to base64 and store in database
     let documentPath = null;
     if (req.file && leaveType === 'DL') {
-      // Convert PDF to base64 for storage (Vercel-compatible)
-      const base64Document = req.file.buffer.toString('base64');
-      const dataUrl = `data:${req.file.mimetype};base64,${base64Document}`;
-      
-      // Store as base64 data URL in documentPath field
-      // Format: data:application/pdf;base64,<base64_string>
-      documentPath = dataUrl;
+      // Store relative path: leave-documents/filename
+      documentPath = `leave-documents/${req.file.filename}`;
     }
 
     // Create leave application
@@ -2444,9 +2584,16 @@ export const addGuide = async (req, res) => {
       return res.status(400).json({ error: 'Email already registered' });
     }
 
+    // Check if guide ID is already taken
+    const existingGuideId = await prisma.user.findUnique({ where: { id: String(guideId) } });
+    if (existingGuideId) {
+      return res.status(400).json({ error: 'Guide ID already registered' });
+    }
+
     // Create guide user
     const guideUser = await prisma.user.create({
       data: {
+        id: String(guideId), // Use guide ID as the user ID
         email,
         name,
         password,
@@ -2503,9 +2650,16 @@ export const addCoGuide = async (req, res) => {
       return res.status(400).json({ error: 'Email already registered' });
     }
 
+    // Check if co-guide ID is already taken
+    const existingCoGuideId = await prisma.user.findUnique({ where: { id: String(coGuideId) } });
+    if (existingCoGuideId) {
+      return res.status(400).json({ error: 'Co-guide ID already registered' });
+    }
+
     // Create co-guide user (also with GUIDE role)
     const coGuideUser = await prisma.user.create({
       data: {
+        id: String(coGuideId), // Use co-guide ID as the user ID
         email,
         name,
         password,
