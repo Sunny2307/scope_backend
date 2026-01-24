@@ -472,7 +472,12 @@ export const saveStudentProfile = async (req, res) => {
 
 
     const existingProfile = await prisma.studentProfile.findUnique({ where: { studentId: student.id } });
-    if (existingProfile) return res.status(400).json({ error: 'Student profile already exists' });
+    if (existingProfile) {
+      return res.status(400).json({ 
+        error: 'Student profile already exists',
+        message: 'Your profile has already been submitted. Your approval status is: ' + (user.approvalStatus || 'PENDING')
+      });
+    }
 
 
     // Enhanced validation
@@ -629,7 +634,15 @@ export const saveStudentProfile = async (req, res) => {
   } catch (error) {
     console.error('Save student profile error:', error.message, error.stack); // Detailed logging
     if (error.code === 'P2002') {
-      res.status(400).json({ error: 'Duplicate entry for a unique field (e.g., ugcId or personalEmail)' });
+      // Extract which field caused the unique constraint violation
+      let fieldName = 'a field';
+      if (error.meta && error.meta.target) {
+        fieldName = error.meta.target.join(', ');
+      }
+      res.status(400).json({ 
+        error: `A student already has this ${fieldName}. Please check your details and try again.`,
+        details: fieldName
+      });
     } else {
       res.status(500).json({ error: 'Failed to save student profile', details: error.message });
     }

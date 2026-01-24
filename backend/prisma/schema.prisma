@@ -173,6 +173,9 @@ model Leave {
   @@index([studentId])
   @@index([leaveType])
   @@index([status])
+  @@index([startDate])
+  @@index([endDate])
+  @@index([applicationDate])
 }
 
 model Event {
