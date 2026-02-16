@@ -585,7 +585,7 @@ export const saveStudentProfile = async (req, res) => {
     await prisma.student.update({
       where: { id: student.id },
       data: {
-        department: 'Computer Science', // Set a default department or derive from institute
+        department: profileData.department || '',
         scholarshipType: profileData.scholarshipType || null,
         scholarshipAmount: profileData.scholarshipAmount ? parseInt(profileData.scholarshipAmount) : 30000,
         ugcId: profileData.studentId || null,
@@ -1724,7 +1724,7 @@ export const getGuideStudents = async (req, res) => {
         name: student.user.name || 'Unknown Student',
         batch: 'C1', // Default batch - you might want to add this to student profile
         email: student.user.email,
-        department: student.department || 'Computer Science',
+        department: student.department || '',
       };
     });
 
@@ -2473,7 +2473,7 @@ export const updateStudentProfile = async (req, res) => {
     await prisma.student.update({
       where: { id: student.student.id },
       data: {
-        department: student.student.department, // Keep existing department
+        department: profileData.department || student.student.department,
         scholarshipType: profileData.scholarshipType || student.student.scholarshipType,
         scholarshipAmount: profileData.scholarshipAmount ? parseInt(profileData.scholarshipAmount) : student.student.scholarshipAmount,
         ugcId: profileData.studentId || student.student.ugcId,
